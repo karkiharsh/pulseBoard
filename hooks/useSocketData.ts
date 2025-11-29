@@ -8,7 +8,7 @@ let intervalId = null;
 const LABELS = ['CPU_LOAD', 'MEM_USAGE', 'NET_RX', 'NET_TX', 'DISK_IO'];
 
 function generateMetric() {
-  console.log('Web socket code under execution');
+  // console.log('Web socket code under execution');
   const isCritical = Math.random() < 0.05; // 5% chance of critical update
   const label = LABELS[Math.floor(Math.random() * LABELS.length)];
   
