@@ -1,5 +1,5 @@
 feedback loop : 
-	: if main thread gets congested / buttons toggles dont work give some feature to tell atleas before hand that cooldown is going to happen at this 	  point of time or some better feature to turn on web workers.
+	: if main thread gets congested / buttons toggles dont work give some feature to tell atleas before hand that cooldown is going to happen at this point of time or some better feature to turn on web workers.
 	
 	: critical feed ui is too distracting and of pain to the viewer , it could be of red color but the graphs are better i mean bars
 	
@@ -13,4 +13,11 @@ feedback loop :
 	
 	: decide upon meaningful data to be displayed for easy understanding. 
 
+--
+logs : 
+
+
+
+- To do : fix same rendering frequency of critical and nonCritical components
+- dashboard component rendering is now independent of critial & nonCritical metrics components
 	
