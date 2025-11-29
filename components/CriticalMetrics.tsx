@@ -11,9 +11,8 @@ interface CriticalMetricsProps {
 export const CriticalMetrics: React.FC<CriticalMetricsProps> = ({ data, settings }) => {
   const renderCount = useRef(0);
   
-  if (settings.profileMode) {
-    renderCount.current++;
-  }
+  renderCount.current++;
+  
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden group">

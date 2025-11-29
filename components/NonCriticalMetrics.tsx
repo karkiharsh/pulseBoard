@@ -12,9 +12,8 @@ interface NonCriticalMetricsProps {
 export const NonCriticalMetrics: React.FC<NonCriticalMetricsProps> = ({ computed, settings }) => {
   const renderCount = useRef(0);
 
-  if (settings.profileMode) {
-    renderCount.current++;
-  }
+  renderCount.current++;
+  
 
   // Mock data for the chart based on current stats to make it look active
   const chartData = computed ? [
