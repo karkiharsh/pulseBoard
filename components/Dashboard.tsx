@@ -1,44 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchSystemInfo } from '../api/systemInfo';
-import { useSocketData } from '../hooks/useSocketData';
-import { usePerformanceWorker } from '../hooks/usePerformanceWorker';
-import { AppSettings } from '../types';
-import { CriticalMetrics } from './CriticalMetrics';
-import { NonCriticalMetrics } from './NonCriticalMetrics';
 import { Controls } from './Controls';
+import { MetricsContainer } from './MetricsContainer';
+import { AppSettings } from '../types';
 import { Server, Wifi, WifiOff, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
-
+import { fetchSystemInfo } from '../api/systemInfo';
 export const Dashboard: React.FC = () => {
+  const renderCount = useRef(0);
+  renderCount.current++;
+
   const [settings, setSettings] = useState<AppSettings>({
     buffer: false,
     workerOff: false,
     profileMode: false,
   });
-
-  const { data: systemInfo, isLoading } = useQuery({
+ const { data: systemInfo, isLoading } = useQuery({
     queryKey: ['systemInfo'],
     queryFn: fetchSystemInfo,
   });
 
-  // 1. Setup Computation Worker (receives batches)
-  const { computedResult, processBatch } = usePerformanceWorker(settings.workerOff);
-
-  // 2. Setup Data Stream (generates metrics + buffering)
-  const { criticalMetric, isConnected } = useSocketData({
-    onFlushBatch: processBatch,
-    buffer: settings.buffer,
-  });
-
   const toggleSetting = (key: keyof AppSettings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  console.log('Dashboard rendered:', renderCount.current);
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 p-4 md:p-8">
+       {settings.profileMode && (
+        <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
+          Renders: {renderCount.current}
+        </span>
+      )}
       <div className="max-w-6xl mx-auto space-y-6">
-        
         {/* Header */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-zinc-900">
           <div>
@@ -47,34 +42,29 @@ export const Dashboard: React.FC = () => {
             </h1>
             <p className="text-zinc-400 text-sm">High-Performance React Architecture Demo</p>
           </div>
-          
+
           <div className="flex items-center gap-4 bg-zinc-900/50 p-2 rounded-lg border border-zinc-800">
-            <div className={clsx("flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium", isConnected ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>
-              {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
-              {isConnected ? 'Socket Connected' : 'Disconnected'}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400">
+              <Wifi size={14} />
+              Connected
             </div>
-            
             <div className="h-4 w-px bg-zinc-800" />
-            
             <div className="flex items-center gap-2 text-xs text-zinc-400 px-2">
               <Server size={14} />
-              {isLoading ? '...' : systemInfo?.region}
+              india
             </div>
-
-             <div className="flex items-center gap-2 text-xs text-zinc-400 px-2">
+            <div className="flex items-center gap-2 text-xs text-zinc-400 px-2">
               <Clock size={14} />
-              {isLoading ? '...' : `${Math.floor((systemInfo?.uptimeSeconds || 0) / 3600)}h Uptime`}
+              123h Uptime
             </div>
           </div>
         </header>
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Left Col: Controls & Settings */}
+          {/* Left Col: Controls */}
           <div className="lg:col-span-1 space-y-6">
-             <Controls settings={settings} onToggle={toggleSetting} />
-             
+            <Controls settings={settings} onToggle={toggleSetting} />
              {/* System Status Card */}
              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
                <h3 className="text-sm font-medium text-zinc-400 mb-4">System Health</h3>
@@ -93,10 +83,9 @@ export const Dashboard: React.FC = () => {
              </div>
           </div>
 
-          {/* Right Col: Metrics */}
+          {/* Right Col: Metrics Container */}
           <div className="lg:col-span-2 space-y-6">
-            <CriticalMetrics data={criticalMetric} settings={settings} />
-            <NonCriticalMetrics computed={computedResult} settings={settings} />
+            <MetricsContainer settings={settings} />
           </div>
         </div>
       </div>
