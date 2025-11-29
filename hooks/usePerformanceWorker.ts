@@ -6,7 +6,7 @@ import { performHeavyComputation } from '../utils/heavyMath';
 const COMPUTE_WORKER_CODE = `
 self.onmessage = (e) => {
   const { batch } = e.data;
-  
+  console.log("worker code under execution");
   if (!batch || !Array.isArray(batch)) return;
   
   const values = batch.map((d) => d.value);
