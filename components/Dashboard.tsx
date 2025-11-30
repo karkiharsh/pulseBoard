@@ -37,7 +37,7 @@ export const Dashboard: React.FC = () => {
 
   return (
      <DashboardContext.Provider value={contextValue}>
-    (<div className="min-h-screen bg-black text-zinc-100 px-4 md:px-8 py-6">
+    <div className="min-h-screen bg-black text-zinc-100 px-4 md:px-8 py-6">
       
       {/* Profile Render Counter */}
      
@@ -118,7 +118,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>)
+    </div>
      </DashboardContext.Provider>
   );
 };
