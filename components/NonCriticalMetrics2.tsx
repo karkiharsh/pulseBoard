@@ -3,7 +3,7 @@ import { Layers, Activity, Cpu, TrendingUp } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, YAxis, Tooltip } from "recharts";
 import type { NonCriticalEvent, HospitalEvent } from "../types";
 import { LiveTrendChart } from "./LiveTrendChart";
-
+import { useDashboard } from "@/context/DashboardContext";
 interface PatientMetrics {
   count: number;
   average: number;
@@ -34,10 +34,11 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
   const [computedByPatient, setComputedByPatient] = useState<Record<string, PatientMetrics>>({});
   const [populationAverages, setPopulationAverages] = useState<PopulationPoint | null>(null);
   const [populationHistory, setPopulationHistory] = useState<PopulationPoint[]>([]);
-
+  const { settings } = useDashboard();
   const renderCount = useRef(0);
   renderCount.current++;
-
+  const offloadWork = useRef<boolean>(!settings.workerOff);
+  useEffect(()=> {offloadWork.current = !settings.workerOff}, [settings.workerOff])
   // Per-patient buffers
   const bufferRef = useRef<Record<string, NonCriticalEvent[]>>({});
   const historyRef = useRef<Record<string, PatientMetrics[]>>({});
@@ -59,7 +60,9 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
     worker.addEventListener("message", onMsg);
     return () => worker.removeEventListener("message", onMsg);
   }, [worker]);
-
+  useEffect(()=>{
+    console.log("workerOff  : ", settings.workerOff)
+  },[settings])
   // Helpers
   function mean(nums: number[]) {
     if (nums.length === 0) return 0;
@@ -80,7 +83,6 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
     const interval = setInterval(() => {
       const buffers = bufferRef.current;
       const now = Date.now();
-
       const perPatientAverages: number[] = [];
       const perPatientStdDevs: number[] = [];
       let totalCount = 0;
@@ -163,6 +165,30 @@ setPopulationHistory([...populationHistoryRef.current]);
       for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
         if (arr.length > 0) latest[id] = arr[arr.length - 1];
       }
+     if(!offloadWork.current) {function heavyBlock(durationMs) {
+    const stopAt = performance.now() + durationMs;
+
+    // A little state to ensure work isn't optimized out:
+    let f = 0;
+    let b = 0n;
+
+    while (performance.now() < stopAt) {
+      // Inner loop does millions of ops; tweak count to taste.
+      for (let i = 0; i < 8_000_000; i++) {
+        // Some non-trivial floating point work:
+        f += Math.sqrt((i % 997) + f) / (1 + (f % 13));
+        f = f % 1e9;
+
+        // Some BigInt work so the engine can't vectorize everything:
+        b += BigInt((i * 37) % 104729) * BigInt((i * 41) % 130099);
+        b = b % 10_000_000_000_000_000_000n;
+      }
+    }
+
+    // Use values so dead-code elimination doesn't skip work:
+    console.log("Finished.", { f, b: b.toString() });
+  }
+heavyBlock(5_000);}
       setComputedByPatient(latest);
     }, FLUSH_MS);
 
