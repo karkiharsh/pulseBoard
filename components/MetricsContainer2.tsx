@@ -1,70 +1,85 @@
-// MetricsContainer2.tsx
 import { useEffect, useRef } from "react";
 import { CriticalMetrics2 } from "./CriticalMetrics2";
 import type { HospitalEvent } from "../types";
+import { NonCriticalMetrics2 } from "./NonCriticalMetrics2";
 
 export function MetricsContainer2() {
   const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
+    // Inline worker code as a string
     const code = `
-      const INTERVAL = 50;
-      const PATIENTS = ['John Doe', 'Alice Kim', 'Ravi Patel', 'Sara Lee'];
-      const LABELS = ['Heart Rate', 'Oxygen Level', 'Temperature', 'BP'];
-      const UNITS = ['bpm', '%', '°C', 'mmHg'];
-      const WARDS = ['ICU-1', 'Ward-2', 'ER-3'];
+  const INTERVAL = 50;
+  const BASE_NAMES = ["John Doe", "Alice Kim", "Ravi Patel", "Sara Lee", "Miguel Díaz", "Priya Nair", "Emma Wong", "Noah Smith"];
 
-      let timer = null;
+  // Create stable patients for the session, with random numeric suffixes on both id & name
+  function unique(n) { return Math.floor(100 + Math.random() * 900); } // 3-digit
+  const PATIENTS = Array.from({ length: 6 }, (_, i) => {
+    const n1 = unique(i);
+    const n2 = unique(i + 10);
+    return {
+      id: "P-" + n1 + n2,                           // e.g., P-734281
+      name: BASE_NAMES[i % BASE_NAMES.length] + " #" + unique(i + 20) // e.g., "John Doe #593"
+    };
+  });
 
-      function gen() {
-        const isCritical = Math.random() < 0.15;
-        const patient = PATIENTS[Math.floor(Math.random() * PATIENTS.length)] +Math.floor(Math.random()*1000);
-        const labelIndex = Math.floor(Math.random() * LABELS.length);
+  const LABELS = ['Heart Rate', 'Oxygen Level', 'Temperature', 'BP'];
+  const UNITS = ['bpm', '%', '°C', 'mmHg'];
+  const WARDS = ['ICU-1', 'Ward-2', 'ER-3'];
 
-        const msg = isCritical
-          ? {
-              id: crypto.randomUUID(),
-              type: 'CRITICAL',
-              label: LABELS[labelIndex],
-              value: Math.random() * 100,
-              unit: UNITS[labelIndex],
-              source: 'PatientMonitor',
-              timestamp: Date.now(),
-              severity: ['LOW','MEDIUM','HIGH'][Math.floor(Math.random() * 3)],
-              patientName: patient,
-              ward: WARDS[Math.floor(Math.random() * WARDS.length)],
-              alertMessage: LABELS[labelIndex] + ' abnormal',
-              acknowledged: Math.random() < 0.3
-            }
-          : {
-              id: crypto.randomUUID(),
-              type: 'NON_CRITICAL',
-              label: LABELS[labelIndex],
-              value: Math.random() * 100,
-              unit: UNITS[labelIndex],
-              source: 'VitalsSensor',
-              timestamp: Date.now(),
-              category: 'VITALS',
-              average: 50 + Math.random() * 10,
-              min: 45 + Math.random() * 5,
-              max: 60 + Math.random() * 5,
-              batchSize: 10 + Math.floor(Math.random() * 20)
-            };
+  let timer = null;
 
-        postMessage(msg);
-      }
+  function gen() {
+    const isCritical = Math.random() < 0.15;
+    const patient = PATIENTS[Math.floor(Math.random() * PATIENTS.length)];
+    const labelIndex = Math.floor(Math.random() * LABELS.length);
 
-      onmessage = (e) => {
-        if (e.data === 'START') {
-          if (timer) clearInterval(timer);
-          timer = setInterval(gen, INTERVAL);
-        }
-        if (e.data === 'STOP') {
-          if (timer) clearInterval(timer);
-          timer = null;
-        }
-      };
-    `;
+    if (isCritical) {
+      postMessage({
+        id: crypto.randomUUID(),
+        type: "CRITICAL",
+        label: LABELS[labelIndex],
+        value: Math.random() * 100,
+        unit: UNITS[labelIndex],
+        source: "PatientMonitor",
+        timestamp: Date.now(),
+        severity: ["LOW", "MEDIUM", "HIGH"][Math.floor(Math.random() * 3)],
+        patientId: patient.id,
+        patientName: patient.name,
+        ward: WARDS[Math.floor(Math.random() * WARDS.length)],
+        alertMessage: LABELS[labelIndex] + " abnormal",
+        acknowledged: Math.random() < 0.3,
+      });
+    } else {
+      postMessage({
+        id: crypto.randomUUID(),
+        type: "NON_CRITICAL",
+        label: LABELS[labelIndex],
+        value: 50 + Math.random() * 50, // 50–100
+        unit: UNITS[labelIndex],
+        source: "VitalsSensor",
+        timestamp: Date.now(),
+        category: "VITALS",
+        patientId: patient.id,
+        patientName: patient.name,
+        deviceId: "DEV-" + Math.floor(Math.random() * 100),
+        deviceLocation: WARDS[Math.floor(Math.random() * WARDS.length)],
+      });
+    }
+  }
+
+  onmessage = (e) => {
+    if (e.data === 'START') {
+      if (timer) clearInterval(timer);
+      timer = setInterval(gen, INTERVAL);
+    }
+    if (e.data === 'STOP') {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+  };
+`;
+
 
     const blob = new Blob([code], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
@@ -86,7 +101,7 @@ export function MetricsContainer2() {
       {workerRef.current && (
         <>
           <CriticalMetrics2 worker={workerRef.current} />
-          {/* Later: <NonCriticalMetrics2 worker={workerRef.current} /> */}
+          <NonCriticalMetrics2 worker={workerRef.current} />
         </>
       )}
     </div>
