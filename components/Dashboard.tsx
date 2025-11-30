@@ -14,7 +14,7 @@ export const Dashboard: React.FC = () => {
 
   const [settings, setSettings] = useState<AppSettings>({
     buffer: false,
-    workerOff: false,
+    OffloadToWorker: true,
     profileMode: false,
   });
 

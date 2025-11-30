@@ -80,9 +80,9 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
         </p>
 
         <ToggleBtn
-          active={settings.workerOff}
-          onClick={() => onToggle("workerOff")}
-          label="Disable Worker"
+          active={settings.OffloadToWorker}
+          onClick={() => onToggle("OffloadToWorker")}
+          label="Offload to Web Worker"
           icon={Activity}
         />
         <p className="text-[10px] text-zinc-500 px-1 mb-1">

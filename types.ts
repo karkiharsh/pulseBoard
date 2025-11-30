@@ -26,7 +26,7 @@ export interface SystemInfo {
 
 export interface AppSettings {
   buffer: boolean; // Disables buffering (simulates lag)
-  workerOff: boolean; // Runs mock parsing computation on main thread
+  OffloadToWorker: boolean; // Runs mock parsing computation on main thread
   profileMode: boolean; // Enables visual render logging
 }
 // types.ts

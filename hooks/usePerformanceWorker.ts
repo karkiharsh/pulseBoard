@@ -43,7 +43,7 @@ self.onmessage = (e) => {
 };
 `;
 
-export const usePerformanceWorker = (workerOff: boolean) => {
+export const usePerformanceWorker = (OffloadToWorker: boolean) => {
   const workerRef = useRef<Worker | null>(null);
   const [computedResult, setComputedResult] = useState<ComputedMetrics | null>(null);
 
@@ -66,7 +66,7 @@ export const usePerformanceWorker = (workerOff: boolean) => {
   }, []);
 
   const processBatch = useCallback((batch: MetricUpdate[]) => {
-    if (workerOff) {
+    if (OffloadToWorker) {
       // Main thread computation (Will block UI if batch is large or math is heavy)
       const result = performHeavyComputation(batch);
       setComputedResult(result);
@@ -76,7 +76,7 @@ export const usePerformanceWorker = (workerOff: boolean) => {
         workerRef.current.postMessage({ batch });
       }
     }
-  }, [workerOff]);
+  }, [OffloadToWorker]);
 
   return { computedResult, processBatch };
 };

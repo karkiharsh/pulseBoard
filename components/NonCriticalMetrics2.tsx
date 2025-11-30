@@ -37,8 +37,8 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
   const { settings } = useDashboard();
   const renderCount = useRef(0);
   renderCount.current++;
-  const offloadWork = useRef<boolean>(!settings.workerOff);
-  useEffect(()=> {offloadWork.current = !settings.workerOff}, [settings.workerOff])
+  const offloadWork = useRef<boolean>(settings.OffloadToWorker);
+  useEffect(()=> {offloadWork.current = settings.OffloadToWorker}, [settings.OffloadToWorker])
   // Per-patient buffers
   const bufferRef = useRef<Record<string, NonCriticalEvent[]>>({});
   const historyRef = useRef<Record<string, PatientMetrics[]>>({});
@@ -61,7 +61,7 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
     return () => worker.removeEventListener("message", onMsg);
   }, [worker]);
   useEffect(()=>{
-    console.log("workerOff  : ", settings.workerOff)
+    console.log("OffloadToWorker  : ", settings.OffloadToWorker)
   },[settings])
   // Helpers
   function mean(nums: number[]) {
@@ -165,7 +165,8 @@ setPopulationHistory([...populationHistoryRef.current]);
       for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
         if (arr.length > 0) latest[id] = arr[arr.length - 1];
       }
-     if(!offloadWork.current) {function heavyBlock(durationMs) {
+     if(!offloadWork.current) {
+      function heavyBlock(durationMs) {
     const stopAt = performance.now() + durationMs;
 
     // A little state to ensure work isn't optimized out:
@@ -187,8 +188,9 @@ setPopulationHistory([...populationHistoryRef.current]);
 
     // Use values so dead-code elimination doesn't skip work:
     console.log("Finished.", { f, b: b.toString() });
-  }
-heavyBlock(5_000);}
+      }
+      heavyBlock(5_000);
+    }
       setComputedByPatient(latest);
     }, FLUSH_MS);
 
