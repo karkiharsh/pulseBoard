@@ -47,16 +47,34 @@ export interface CriticalEvent extends BaseEvent {
   alertMessage: string;
   acknowledged: boolean;
 }
-
 export interface NonCriticalEvent extends BaseEvent {
   type: 'NON_CRITICAL';
   category: 'VITALS' | 'ENVIRONMENT' | 'DEVICE';
-  average?: number;
   min?: number;
   max?: number;
-  batchSize?: number;
   notes?: string;
+
+  // optional context (safe to add)
+  patientId?: string;
+  patientName?: string;
+  deviceId?: string;
+  deviceLocation?: string;
+
+  // optional analytics metadata (safe to ignore if absent)
+  rollingAvg?: number;
+  rollingStdDev?: number;
+  trend?: 'RISING' | 'FALLING' | 'STABLE';
+  deviation?: number;
+  anomalyScore?: number;
+  quality?: 'GOOD' | 'QUESTIONABLE' | 'BAD';
+  confidence?: number;
+  status?: 'NORMAL' | 'WARNING' | 'CRITICAL';
+  colorCode?: string;
+  batchId?: string;
+  windowStart?: number;
+  windowEnd?: number;
 }
 
-export type HospitalEvent = CriticalEvent | NonCriticalEvent;
+// Union used by your worker messages
+export type HospitalEvent = NonCriticalEvent | CriticalEvent;
 
