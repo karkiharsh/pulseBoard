@@ -33,6 +33,7 @@ const MAX_POINTS = Math.ceil(WINDOW_MS / FLUSH_MS); // ~60
 export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
   const [computedByPatient, setComputedByPatient] = useState<Record<string, PatientMetrics>>({});
   const [populationAverages, setPopulationAverages] = useState<PopulationPoint | null>(null);
+  const [populationHistory, setPopulationHistory] = useState<PopulationPoint[]>([]);
 
   const renderCount = useRef(0);
   renderCount.current++;
@@ -152,6 +153,7 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
         ) {
           populationHistoryRef.current.shift();
         }
+setPopulationHistory([...populationHistoryRef.current]);
 
         setPopulationAverages(point);
       }
@@ -212,7 +214,7 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
       <div className="h-48 bg-zinc-950/30 rounded-lg border border-zinc-800/50 p-2 mb-6">
         <LiveTrendChart
           simulate={false}
-          externalData={populationHistoryRef.current}
+          externalData={populationHistory}
           className="h-full"
         />
       </div>
