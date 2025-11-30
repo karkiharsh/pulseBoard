@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef,createContext,useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Controls } from "./Controls";
 import { MetricsContainer2 } from "./MetricsContainer2";
@@ -6,6 +6,7 @@ import { AppSettings } from "../types";
 import { Server, Wifi, Clock } from "lucide-react";
 import { clsx } from "clsx";
 import { fetchSystemInfo } from "../api/systemInfo";
+import { DashboardContext } from "../context/DashboardContext";
 
 export const Dashboard: React.FC = () => {
   const renderCount = useRef(0);
@@ -26,8 +27,17 @@ export const Dashboard: React.FC = () => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const contextValue = {
+    renderCount: renderCount.current,
+    settings,
+    toggleSetting,
+    systemInfo,
+    isLoading,
+  };
+
   return (
-    <div className="min-h-screen bg-black text-zinc-100 px-4 md:px-8 py-6">
+     <DashboardContext.Provider value={contextValue}>
+    (<div className="min-h-screen bg-black text-zinc-100 px-4 md:px-8 py-6">
       
       {/* Profile Render Counter */}
      
@@ -108,6 +118,9 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div>)
+     </DashboardContext.Provider>
   );
 };
+
+
