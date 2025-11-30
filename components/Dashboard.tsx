@@ -28,12 +28,13 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 px-4 md:px-8 py-6">
+      
       {/* Profile Render Counter */}
-      {settings.profileMode && (
+     
         <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
           Renders: {renderCount.current}
         </span>
-      )}
+      
 
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
