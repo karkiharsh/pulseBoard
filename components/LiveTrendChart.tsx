@@ -27,23 +27,26 @@ interface Props {
   className?: string;
 }
 
-const WINDOW_MS = 30_000;
+const WINDOW_MS = 30_000; // 30 seconds visible window
 
-export const LiveTrendChart: React.FC<Props> = ({ externalData, simulate = true, className }) => {
+export const LiveTrendChart: React.FC<Props> = ({
+  externalData,
+  simulate = true,
+  className,
+}) => {
   const [simPoints, setSimPoints] = useState<Point[]>([]);
   const timerRef = useRef<number | null>(null);
 
-  // If externalData is present, we render that. Otherwise we simulate.
   const useSimulation = !externalData || externalData.length === 0 ? simulate : false;
 
-  // Simple simulator that evolves smoothly
+  // Generate next simulated point with smooth evolution
   function nextSimPoint(prev?: Point): Point {
     const now = Date.now();
     const prevAvg = prev?.rollingAvg ?? 75;
-    const avg = Math.max(50, Math.min(100, prevAvg + (Math.random() - 0.5) * 3)); // gentle walk
+    const avg = Math.max(50, Math.min(100, prevAvg + (Math.random() - 0.5) * 3)); // smooth variation
 
     const deviation = Math.abs(avg - 75);
-    const volatility = Math.random() * 0.6 + deviation / 60; // small noise + tie to deviation
+    const volatility = Math.random() * 0.6 + deviation / 60;
     const anomalyScore = Math.max(0, Math.min(1, (volatility + deviation / 50) / 2));
 
     return {
@@ -66,7 +69,7 @@ export const LiveTrendChart: React.FC<Props> = ({ externalData, simulate = true,
       });
     }
 
-    // seed a few points
+    // Seed a few points initially
     for (let i = 0; i < 5; i++) tick();
 
     timerRef.current = window.setInterval(tick, 2000); // every 2s
@@ -76,22 +79,37 @@ export const LiveTrendChart: React.FC<Props> = ({ externalData, simulate = true,
     };
   }, [useSimulation]);
 
+  // Prepare data for chart
   const data = useMemo(() => {
     const raw = useSimulation ? simPoints : externalData ?? [];
     return raw.map((d) => ({
       ...d,
-      t: new Date(d.windowEnd).toLocaleTimeString(),
+      formattedTime: new Date(d.windowEnd).toLocaleTimeString(),
     }));
   }, [simPoints, externalData, useSimulation]);
 
   return (
     <div className={clsx("w-full h-full", className)}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+          syncMethod="value"
+        >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="t" tick={{ fontSize: 10 }} />
+          {/* ✅ Use numeric time scale for smooth timeline */}
+          <XAxis
+            dataKey="windowEnd"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            scale="time"
+            tickFormatter={(ts) => new Date(ts).toLocaleTimeString()}
+            tick={{ fontSize: 10 }}
+          />
           <YAxis tick={{ fontSize: 10 }} />
-          <Tooltip />
+          <Tooltip
+            labelFormatter={(ts) => new Date(Number(ts)).toLocaleTimeString()}
+          />
           <Legend />
           <Line
             type="monotone"
