@@ -7,7 +7,7 @@ issues resolved :
     ✅: dashboard component rendering is now independent of critial & nonCritical metrics components
 
 feedback loop : 
-
+    : pass settings using context / state managements
 	: if main thread gets congested / buttons toggles dont work give some feature to tell atleas before hand that cooldown is going to happen at this point of time or some better feature to turn on web workers.
 	
 	: when buffering is on  renders of critical feed should be faster than the renders of aggregates streams build 
