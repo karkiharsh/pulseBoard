@@ -21,7 +21,7 @@ export const MetricsContainer = ({ settings }) => {
 
   return (
     <>
-      <CriticalMetrics data={criticalMetric} settings={settings} />
+      {/* <CriticalMetrics data={criticalMetric} settings={settings} /> */}
       <NonCriticalMetrics computed={computedResult} settings={settings} />
     </>
   );
