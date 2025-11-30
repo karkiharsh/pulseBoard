@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Controls } from './Controls';
 import { MetricsContainer } from './MetricsContainer';
+import { MetricsContainer2 } from './MetricsContainer2';
 import { AppSettings } from '../types';
 import { Server, Wifi, WifiOff, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -88,6 +89,9 @@ export const Dashboard: React.FC = () => {
             <MetricsContainer settings={settings} />
           </div>
         </div>
+      </div>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <MetricsContainer2  />
       </div>
     </div>
   );
