@@ -13,7 +13,7 @@ export const Dashboard: React.FC = () => {
   renderCount.current++;
 
   const [settings, setSettings] = useState<AppSettings>({
-    buffer: false,
+    buffer: true,
     OffloadToWorker: true,
     profileMode: false,
   });
