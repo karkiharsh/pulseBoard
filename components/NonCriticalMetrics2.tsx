@@ -79,127 +79,238 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
   }
 
   // Flush every 500ms → compute per-patient + population metrics
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const buffers = bufferRef.current;
-      const now = Date.now();
-      const perPatientAverages: number[] = [];
-      const perPatientStdDevs: number[] = [];
-      let totalCount = 0;
+useEffect(() => {
+  if (!settings.buffer) return; // Skip this effect when slow mode is on
 
-      for (const patientId of Object.keys(buffers)) {
-        const events = buffers[patientId];
-        if (!events || events.length === 0) continue;
+  const onMsg = (e: MessageEvent<HospitalEvent>) => {
+    const msg = e.data;
+    if (!isNonCriticalEvent(msg)) return;
+    const patientId = msg.patientId ?? "Unknown";
+    if (!bufferRef.current[patientId]) bufferRef.current[patientId] = [];
+    bufferRef.current[patientId].push(msg);
+  };
 
-        const values = events.map((e) => e.value);
-        const count = values.length;
-        totalCount += count;
+  worker.addEventListener("message", onMsg);
 
-        const avg = mean(values);
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const sd = stddev(values);
+  const interval = setInterval(() => {
+    const buffers = bufferRef.current;
+    const now = Date.now();
+    const perPatientAverages: number[] = [];
+    const perPatientStdDevs: number[] = [];
+    let totalCount = 0;
 
-        perPatientAverages.push(avg);
-        perPatientStdDevs.push(sd);
+    for (const patientId of Object.keys(buffers)) {
+      const events = buffers[patientId];
+      if (!events || events.length === 0) continue;
 
-        const newMetric: PatientMetrics = {
-          count,
-          average: Number(avg.toFixed(1)),
-          min: Number(min.toFixed(1)),
-          max: Number(max.toFixed(1)),
-          lastProcessedTimestamp: now,
-        };
+      const values = events.map((e) => e.value);
+      const count = values.length;
+      totalCount += count;
 
-        if (!historyRef.current[patientId]) historyRef.current[patientId] = [];
-        const arr = historyRef.current[patientId];
-        arr.push(newMetric);
-        if (arr.length > 20) arr.shift(); // keep small per-patient spark data
+      const avg = mean(values);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const sd = stddev(values);
 
-        buffers[patientId] = [];
+      perPatientAverages.push(avg);
+      perPatientStdDevs.push(sd);
+
+      const newMetric: PatientMetrics = {
+        count,
+        average: Number(avg.toFixed(1)),
+        min: Number(min.toFixed(1)),
+        max: Number(max.toFixed(1)),
+        lastProcessedTimestamp: now,
+      };
+
+      if (!historyRef.current[patientId]) historyRef.current[patientId] = [];
+      const arr = historyRef.current[patientId];
+      arr.push(newMetric);
+      if (arr.length > 20) arr.shift();
+
+      buffers[patientId] = [];
+    }
+
+    if (perPatientAverages.length > 0) {
+      const rollingAvg = mean(perPatientAverages);
+      const rollingStdDev = mean(perPatientStdDevs);
+      const deviation = Math.abs(rollingAvg - BASELINE);
+
+      const volComponent = rollingStdDev / 20;
+      const devComponent = deviation / 50;
+      const rawScore = (volComponent + devComponent) / 2;
+      const anomalyScore = Number(clamp01(rawScore).toFixed(3));
+      const sampleBoost = Math.min(1, totalCount / 40);
+      const conf = clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost);
+      const confidence = Number(conf.toFixed(3));
+
+      const point: PopulationPoint = {
+        windowEnd: now,
+        rollingAvg: Number(rollingAvg.toFixed(2)),
+        rollingStdDev: Number(rollingStdDev.toFixed(2)),
+        deviation: Number(deviation.toFixed(2)),
+        anomalyScore,
+        confidence,
+      };
+
+      populationHistoryRef.current.push(point);
+      while (
+        populationHistoryRef.current.length > 0 &&
+        (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
+          populationHistoryRef.current.length > MAX_POINTS)
+      ) {
+        populationHistoryRef.current.shift();
       }
 
-      // Population-level (not grouped) metrics only if we had any events
-      if (perPatientAverages.length > 0) {
-        const rollingAvg = mean(perPatientAverages);                    // Average of averages
-        const rollingStdDev = mean(perPatientStdDevs);                  // Mean volatility across patients
-        const deviation = Math.abs(rollingAvg - BASELINE);              // Overall deviation from baseline
+      setPopulationHistory([...populationHistoryRef.current]);
+      setPopulationAverages(point);
+    }
 
-        // Simple composite anomaly: balance volatility & deviation, normalize to 0–1
-        const volComponent = rollingStdDev / 20;                        // 0..~2+ given our 50–100 range
-        const devComponent = deviation / 50;                            // 0..~1
-        const rawScore = (volComponent + devComponent) / 2;
-        const anomalyScore = Number(clamp01(rawScore).toFixed(3));
+    const latest: Record<string, PatientMetrics> = {};
+    for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
+      if (arr.length > 0) latest[id] = arr[arr.length - 1];
+    }
+    setComputedByPatient(latest);
 
-        // Confidence: higher with lower stddev and more samples; clamp 0–1
-        const sampleBoost = Math.min(1, totalCount / 40);               // saturate around ~40 samples/flush
-        const conf = clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost);
-        const confidence = Number(conf.toFixed(3));
-
-        const point: PopulationPoint = {
-          windowEnd: now,
-          rollingAvg: Number(rollingAvg.toFixed(2)),
-          rollingStdDev: Number(rollingStdDev.toFixed(2)),
-          deviation: Number(deviation.toFixed(2)),
-          anomalyScore,
-          confidence,
-        };
-
-        // Maintain 30s sliding window
-        populationHistoryRef.current.push(point);
-        // Drop by time (authoritative) and by count (cheap guard)
-        while (
-          populationHistoryRef.current.length > 0 &&
-          (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
-            populationHistoryRef.current.length > MAX_POINTS)
-        ) {
-          populationHistoryRef.current.shift();
+    // 🧱 Heavy computation block
+    if (!settings.OffloadToWorker) {
+      const stopAt = performance.now() + 5000;
+      let f = 0;
+      let b = 0n;
+      while (performance.now() < stopAt) {
+        for (let i = 0; i < 8_000_000; i++) {
+          f += Math.sqrt((i % 997) + f) / (1 + (f % 13));
+          f = f % 1e9;
+          b += BigInt((i * 37) % 104729) * BigInt((i * 41) % 130099);
+          b = b % 10_000_000_000_000_000_000n;
         }
-setPopulationHistory([...populationHistoryRef.current]);
-
-        setPopulationAverages(point);
       }
+      console.log("Buffered heavy block done.", { f, b: b.toString() });
+    }
+  }, FLUSH_MS);
 
-      // Push latest per-patient sample (for your existing patient cards)
-      const latest: Record<string, PatientMetrics> = {};
-      for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
-        if (arr.length > 0) latest[id] = arr[arr.length - 1];
-      }
-     if(!offloadWork.current) {
-      function heavyBlock(durationMs) {
-    const stopAt = performance.now() + durationMs;
+  return () => {
+    clearInterval(interval);
+    worker.removeEventListener("message", onMsg);
+  };
+}, [worker, settings.buffer, settings.OffloadToWorker]);
+useEffect(() => {
+  if (settings.buffer) return;
+console.log("Entering slow mode for NonCriticalMetrics2");
+  // clear buffered data when entering slow mode
+  bufferRef.current = {};
 
-    // A little state to ensure work isn't optimized out:
-    let f = 0;
-    let b = 0n;
+  const onMsg = (e: MessageEvent<HospitalEvent>) => {
+    const msg = e.data;
+    if (!isNonCriticalEvent(msg)) return;
 
-    while (performance.now() < stopAt) {
-      // Inner loop does millions of ops; tweak count to taste.
-      for (let i = 0; i < 8_000_000; i++) {
-        // Some non-trivial floating point work:
-        f += Math.sqrt((i % 997) + f) / (1 + (f % 13));
-        f = f % 1e9;
+    const now = Date.now();
+    const patientId = msg.patientId ?? "Unknown";
+    const value = msg.value;
 
-        // Some BigInt work so the engine can't vectorize everything:
-        b += BigInt((i * 37) % 104729) * BigInt((i * 41) % 130099);
-        b = b % 10_000_000_000_000_000_000n;
-      }
+    const avg = value;
+    const min = value;
+    const max = value;
+    const sd = 0;
+
+    const newMetric: PatientMetrics = {
+      count: 1,
+      average: Number(avg.toFixed(1)),
+      min: Number(min.toFixed(1)),
+      max: Number(max.toFixed(1)),
+      lastProcessedTimestamp: now,
+    };
+
+    if (!historyRef.current[patientId]) historyRef.current[patientId] = [];
+    const arr = historyRef.current[patientId];
+    arr.push(newMetric);
+    if (arr.length > 20) arr.shift();
+
+   const patientArrays = Object.values(historyRef.current) as PatientMetrics[][];
+
+const perPatientAverages = patientArrays.map((arr) =>
+  arr.length > 0 ? arr[arr.length - 1].average : 0
+);
+
+const perPatientStdDevs = patientArrays.map((arr) =>
+  arr.length > 1 ? stddev(arr.map((x) => x.average)) : 0
+);
+
+const totalCount = patientArrays.reduce(
+  (sum, arr) => (arr.length > 0 ? sum + arr[arr.length - 1].count : sum),
+  0
+);
+
+
+    const rollingAvg = mean(perPatientAverages);
+    const rollingStdDev = mean(perPatientStdDevs);
+    const deviation = Math.abs(rollingAvg - BASELINE);
+
+    const volComponent = rollingStdDev / 20;
+    const devComponent = deviation / 50;
+    const rawScore = (volComponent + devComponent) / 2;
+    const anomalyScore = Number(clamp01(rawScore).toFixed(3));
+    const sampleBoost = Math.min(1, totalCount / 40);
+    const conf = clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost);
+    const confidence = Number(conf.toFixed(3));
+
+    const point: PopulationPoint = {
+      windowEnd: now,
+      rollingAvg: Number(rollingAvg.toFixed(2)),
+      rollingStdDev: Number(rollingStdDev.toFixed(2)),
+      deviation: Number(deviation.toFixed(2)),
+      anomalyScore,
+      confidence,
+    };
+
+    populationHistoryRef.current.push(point);
+    while (
+      populationHistoryRef.current.length > 0 &&
+      (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
+        populationHistoryRef.current.length > MAX_POINTS)
+    ) {
+      populationHistoryRef.current.shift();
     }
 
-    // Use values so dead-code elimination doesn't skip work:
-    console.log("Finished.", { f, b: b.toString() });
-      }
-      heavyBlock(5_000);
-    }
-      setComputedByPatient(latest);
-    }, FLUSH_MS);
+    setPopulationHistory([...populationHistoryRef.current]);
+    setPopulationAverages(point);
 
-    return () => clearInterval(interval);
-  }, []);
+    const latest: Record<string, PatientMetrics> = {};
+    for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
+      if (arr.length > 0) latest[id] = arr[arr.length - 1];
+    }
+    setComputedByPatient(latest);
+
+    // 🧱 Heavy computation block in slow mode too
+    if (!settings.OffloadToWorker) {
+      const stopAt = performance.now() + 5000;
+      let f = 0;
+      let b = 0n;
+      while (performance.now() < stopAt) {
+        for (let i = 0; i < 8_000_000; i++) {
+          f += Math.sqrt((i % 997) + f) / (1 + (f % 13));
+          f = f % 1e9;
+          b += BigInt((i * 37) % 104729) * BigInt((i * 41) % 130099);
+          b = b % 10_000_000_000_000_000_000n;
+        }
+      }
+      console.log("Slow mode heavy block done.", { f, b: b.toString() });
+    }
+  };
+
+  worker.addEventListener("message", onMsg);
+  console.log("🟢 Slow mode active — processing events instantly");
+
+  return () => {
+    worker.removeEventListener("message", onMsg);
+    console.log("🔴 Slow mode deactivated — returning to buffered mode");
+  };
+}, [worker, settings.buffer, settings.OffloadToWorker]);
+
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 relative">
-    {settings.profileMode &&  (<span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
+    {settings.profileMode && (<span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
         Renders: {renderCount.current}
       </span>)}
 
