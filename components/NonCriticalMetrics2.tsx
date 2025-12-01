@@ -362,7 +362,8 @@ const totalCount = patientArrays.reduce(
       <div className="flex justify-between items-center pt-3 mt-4 border-t border-zinc-800/50">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <Cpu size={12} />
-          <span>Buffered Processing</span>
+          {settings.buffer &&(<span>Buffered Processing</span>)}
+          {!settings.buffer &&(<span>Instant Processing</span>)}
         </div>
         <div className="text-[10px] font-mono text-zinc-600">
           Patients: {Object.keys(computedByPatient).length}
