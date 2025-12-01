@@ -31,54 +31,52 @@ const WINDOW_MS = 30_000;
 const MAX_POINTS = Math.ceil(WINDOW_MS / FLUSH_MS);
 
 export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
-  // --- REACT STATE ---
-  const [computedByPatient, setComputedByPatient] = useState<
-    Record<string, PatientMetrics>
-  >({});
-  const [populationAverages, setPopulationAverages] =
-    useState<PopulationPoint | null>(null);
+  // -------- React state (UI-facing only) --------
+  const [computedByPatient, setComputedByPatient] = useState<Record<string, PatientMetrics>>({});
+  const [populationAverages, setPopulationAverages] = useState<PopulationPoint | null>(null);
   const [populationHistory, setPopulationHistory] = useState<PopulationPoint[]>([]);
 
   const { settings } = useDashboard();
   const renderCount = useRef(0);
   renderCount.current++;
 
-  // --- MODE FLAGS ---
-  const offloadWork = useRef(settings.OffloadToWorker);
-  const useHeavyComputation = useRef(settings.useHeavyComputation);
-  const currentMode = useRef<"main" | "worker">(
-    settings.OffloadToWorker ? "worker" : "main"
-  );
+  // -------- Runtime flags/refs (no re-renders) --------
+  const offloadWork = useRef<boolean>(settings.OffloadToWorker);
+  const useHeavyComputation = useRef<boolean>(settings.useHeavyComputation);
+  const currentMode = useRef<"main" | "worker">(settings.OffloadToWorker ? "worker" : "main");
+  const activeComputeSource = useRef<"main" | "worker">("main"); // who owns updates *right now*
 
   useEffect(() => {
     offloadWork.current = settings.OffloadToWorker;
     currentMode.current = settings.OffloadToWorker ? "worker" : "main";
     useHeavyComputation.current = settings.useHeavyComputation;
 
-    // Reset transient data on mode change
+    // Reset transient timeline & queue on mode flip to avoid stale merges
     queueRef.current = [];
     workerBusy.current = false;
     populationHistoryRef.current = [];
     setPopulationHistory([]);
     setPopulationAverages(null);
-    console.log(`🔁 Mode switched: ${currentMode.current}`);
+    lastWindowTimestampRef.current = 0;
+    // Note: we intentionally do NOT clear historyRef; patient mini-sparks persist.
+    // eslint-disable-next-line no-console
+    console.log(`🔁 Offload mode switched → ${currentMode.current}`);
   }, [settings.OffloadToWorker, settings.useHeavyComputation]);
 
-  // --- BUFFERS ---
+  // -------- Buffers & rolling stores --------
   const bufferRef = useRef<Record<string, NonCriticalEvent[]>>({});
   const historyRef = useRef<Record<string, PatientMetrics[]>>({});
   const populationHistoryRef = useRef<PopulationPoint[]>([]);
   const lastWindowTimestampRef = useRef<number>(0);
 
-  // --- WORKER SYSTEM ---
+  // -------- Worker system --------
   const computeWorkerRef = useRef<Worker | null>(null);
   const workerBusy = useRef(false);
   const queueRef = useRef<any[]>([]);
   const MAX_QUEUE = 5;
 
-  // --- HELPERS ---
-  const mean = (nums: number[]) =>
-    nums.length === 0 ? 0 : nums.reduce((a, b) => a + b, 0) / nums.length;
+  // -------- Helpers --------
+  const mean = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0);
   const stddev = (nums: number[]) => {
     if (nums.length <= 1) return 0;
     const m = mean(nums);
@@ -87,7 +85,39 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
   };
   const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
-  /** 🧠 Create compute worker (once) */
+  // Build "latest" snapshot from historyRef (avoids stale state closures)
+  const buildLatestFromHistory = () => {
+    const latest: Record<string, PatientMetrics> = {};
+    for (const [id, arr] of Object.entries(historyRef.current) as [string, PatientMetrics[]][]) {
+      if (arr.length > 0) latest[id] = arr[arr.length - 1];
+    }
+    return latest;
+  };
+
+  // Keep windowEnd strictly increasing; also correct if worker result is late
+  const normalizeWindowEnd = (pt: PopulationPoint) => {
+    const now = Date.now();
+    if (now - pt.windowEnd > FLUSH_MS * 2) pt.windowEnd = now; // drift fix
+    if (pt.windowEnd <= lastWindowTimestampRef.current) pt.windowEnd = lastWindowTimestampRef.current + 1;
+    lastWindowTimestampRef.current = pt.windowEnd;
+  };
+
+  // Push populationPoint into rolling window and update state
+  const commitPopulationPoint = (pt: PopulationPoint) => {
+    populationHistoryRef.current.push(pt);
+    const now = Date.now();
+    while (
+      populationHistoryRef.current.length > 0 &&
+      (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
+        populationHistoryRef.current.length > MAX_POINTS)
+    ) {
+      populationHistoryRef.current.shift();
+    }
+    setPopulationAverages(pt);
+    setPopulationHistory([...populationHistoryRef.current]);
+  };
+
+  // -------- Compute Worker: create once --------
   useEffect(() => {
     if (computeWorkerRef.current) return;
 
@@ -95,8 +125,9 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
       self.onmessage = (e) => {
         const { type, id, payload, useHeavyComputation } = e.data;
         if (type !== "process") return;
-        const start = performance.now();
 
+        // Simulate optional heavy CPU work
+        const start = performance.now();
         try {
           if (useHeavyComputation) {
             const stopAt = performance.now() + 2000;
@@ -119,57 +150,49 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
 
     const blob = new Blob([workerCode], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
-    const newWorker = new Worker(url);
-    computeWorkerRef.current = newWorker;
+    const w = new Worker(url);
+    computeWorkerRef.current = w;
 
     const onMsg = (e: MessageEvent) => {
       const msg = e.data;
-      if (msg.type === "done") {
-        // Ignore stale responses
-        if (currentMode.current !== "worker") return;
+      if (msg.type !== "done") return;
 
-        workerBusy.current = false;
-        const { latest, populationPoint } = msg.result;
+      // Discard if worker no longer owns the timeline
+      if (currentMode.current !== "worker" || activeComputeSource.current !== "worker") return;
 
-        if (populationPoint) {
-          // Enforce timestamp monotonicity
-          if (populationPoint.windowEnd <= lastWindowTimestampRef.current)
-            populationPoint.windowEnd = lastWindowTimestampRef.current + 1;
-          lastWindowTimestampRef.current = populationPoint.windowEnd;
+      workerBusy.current = false;
 
-          populationHistoryRef.current.push(populationPoint);
-          const now = Date.now();
-          while (
-            populationHistoryRef.current.length > 0 &&
-            (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
-              populationHistoryRef.current.length > MAX_POINTS)
-          )
-            populationHistoryRef.current.shift();
+      const { latest, populationPoint } = msg.result as {
+        latest: Record<string, PatientMetrics>;
+        populationPoint: PopulationPoint | null;
+      };
 
-          setPopulationHistory([...populationHistoryRef.current]);
-          setPopulationAverages(populationPoint);
-        }
-
-        if (latest) setComputedByPatient(latest);
-        trySendNextBatch();
+      if (populationPoint) {
+        normalizeWindowEnd(populationPoint);
+        commitPopulationPoint(populationPoint);
       }
+      if (latest) setComputedByPatient(latest);
+
+      trySendNextBatch();
     };
 
     const onError = (err: ErrorEvent) => {
-      console.error("Worker crashed:", err.message);
+      // eslint-disable-next-line no-console
+      console.error("Compute worker error:", err.message);
       workerBusy.current = false;
     };
 
-    newWorker.addEventListener("message", onMsg);
-    newWorker.addEventListener("error", onError);
+    w.addEventListener("message", onMsg);
+    w.addEventListener("error", onError);
 
     return () => {
-      newWorker.removeEventListener("message", onMsg);
-      newWorker.removeEventListener("error", onError);
-      newWorker.terminate();
+      w.removeEventListener("message", onMsg);
+      w.removeEventListener("error", onError);
+      w.terminate();
       URL.revokeObjectURL(url);
       computeWorkerRef.current = null;
-      console.log("🧹 Worker terminated");
+      // eslint-disable-next-line no-console
+      console.log("🧹 Compute worker terminated");
     };
   }, []);
 
@@ -182,52 +205,55 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
     w.postMessage(next);
   };
 
-  /** 🧩 Shared websocket listener (pushes to buffer) */
+  // -------- Stream (mock websocket) → buffer --------
   useEffect(() => {
     const onMsg = (e: MessageEvent<HospitalEvent>) => {
       const msg = e.data;
       if (!isNonCriticalEvent(msg)) return;
-      const patientId = msg.patientId ?? "Unknown";
-      if (!bufferRef.current[patientId]) bufferRef.current[patientId] = [];
-      bufferRef.current[patientId].push(msg);
+      const id = msg.patientId ?? "Unknown";
+      (bufferRef.current[id] ||= []).push(msg);
     };
-
     worker.addEventListener("message", onMsg);
     return () => worker.removeEventListener("message", onMsg);
   }, [worker]);
 
-  // ===========================================================
-  // 🟢 BUFFERED MODE (interval-based batching)
-  // ===========================================================
+  // =========================
+  // Buffered mode (interval)
+  // =========================
   useEffect(() => {
     if (!settings.buffer) return;
+    // eslint-disable-next-line no-console
     console.log("🟢 Buffered mode active");
+    activeComputeSource.current = offloadWork.current ? "worker" : "main";
 
     let flushCount = 0;
     const interval = setInterval(() => {
+      if (offloadWork.current && workerBusy.current) return; // hold while worker busy
       flushCount++;
-      const buffers = bufferRef.current;
+
       const now = Date.now();
-      const perPatientAverages: number[] = [];
-      const perPatientStdDevs: number[] = [];
+      const perAvg: number[] = [];
+      const perStd: number[] = [];
       let totalCount = 0;
 
-      for (const patientId of Object.keys(buffers)) {
-        const events = buffers[patientId];
+      // drain buffers → historyRef
+      for (const pid of Object.keys(bufferRef.current)) {
+        const events = bufferRef.current[pid];
         if (!events?.length) continue;
 
         const values = events.map((e) => e.value);
         const count = values.length;
         totalCount += count;
+
         const avg = mean(values);
         const min = Math.min(...values);
         const max = Math.max(...values);
-        const sd = stddev(values);
+        const sd  = stddev(values);
 
-        perPatientAverages.push(avg);
-        perPatientStdDevs.push(sd);
+        perAvg.push(avg);
+        perStd.push(sd);
 
-        const newMetric: PatientMetrics = {
+        const metric: PatientMetrics = {
           count,
           average: Number(avg.toFixed(1)),
           min: Number(min.toFixed(1)),
@@ -235,27 +261,20 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
           lastProcessedTimestamp: now,
         };
 
-        if (!historyRef.current[patientId]) historyRef.current[patientId] = [];
-        const arr = historyRef.current[patientId];
-        arr.push(newMetric);
-        if (arr.length > 20) arr.shift();
-        buffers[patientId] = [];
+        (historyRef.current[pid] ||= []).push(metric);
+        if (historyRef.current[pid].length > 20) historyRef.current[pid].shift();
+
+        bufferRef.current[pid] = []; // clear
       }
 
-      if (perPatientAverages.length === 0) return;
-      if (offloadWork.current && workerBusy.current) return;
+      if (perAvg.length === 0) return; // nothing to flush
 
-      const rollingAvg = mean(perPatientAverages);
-      const rollingStdDev = mean(perPatientStdDevs);
+      const rollingAvg = mean(perAvg);
+      const rollingStdDev = mean(perStd);
       const deviation = Math.abs(rollingAvg - BASELINE);
-      const volComponent = rollingStdDev / 20;
-      const devComponent = deviation / 50;
-      const rawScore = (volComponent + devComponent) / 2;
-      const anomalyScore = Number(clamp01(rawScore).toFixed(3));
+      const anomalyScore = Number(clamp01((rollingStdDev / 20 + deviation / 50) / 2).toFixed(3));
       const sampleBoost = Math.min(1, totalCount / 40);
-      const conf =
-        clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost);
-      const confidence = Number(conf.toFixed(3));
+      const confidence = Number((clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost)).toFixed(3));
 
       const populationPoint: PopulationPoint = {
         windowEnd: now,
@@ -265,110 +284,85 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
         anomalyScore,
         confidence,
       };
-
-      if (populationPoint.windowEnd <= lastWindowTimestampRef.current)
-        populationPoint.windowEnd = lastWindowTimestampRef.current + 1;
-      lastWindowTimestampRef.current = populationPoint.windowEnd;
-
-      const latest: Record<string, PatientMetrics> = {};
-      for (const [id, arr] of Object.entries(
-        historyRef.current
-      ) as [string, PatientMetrics[]][]) {
-        if (arr.length > 0) latest[id] = arr[arr.length - 1];
-      }
+      normalizeWindowEnd(populationPoint);
 
       if (!offloadWork.current) {
-        setComputedByPatient(latest);
-        populationHistoryRef.current.push(populationPoint);
-        const nowTs = Date.now();
-        while (
-          populationHistoryRef.current.length > 0 &&
-          (nowTs - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
-            populationHistoryRef.current.length > MAX_POINTS)
-        )
-          populationHistoryRef.current.shift();
-        setPopulationHistory([...populationHistoryRef.current]);
-        setPopulationAverages(populationPoint);
+        // MAIN owns timeline
+        activeComputeSource.current = "main";
+        setComputedByPatient(buildLatestFromHistory());
+        commitPopulationPoint(populationPoint);
 
         if (useHeavyComputation.current) {
           const stopAt = performance.now() + 2000;
-          while (performance.now() < stopAt) {}
+          while (performance.now() < stopAt) {} // simulate blocking
         }
       } else {
-        const id = Date.now();
-        const payload = { latest, populationPoint };
+        // WORKER owns timeline
+        activeComputeSource.current = "worker";
         const batch = {
           type: "process",
-          id,
-          payload,
+          id: Date.now(),
+          payload: { latest: buildLatestFromHistory(), populationPoint },
           useHeavyComputation: useHeavyComputation.current,
         };
-        if (queueRef.current.length >= MAX_QUEUE) queueRef.current.shift();
+        if (queueRef.current.length >= MAX_QUEUE) queueRef.current.shift(); // drop oldest (bounded)
         queueRef.current.push(batch);
         if (!workerBusy.current) trySendNextBatch();
       }
 
-      if (workerBusy.current && flushCount % 4 === 0)
-        console.warn("⚠️ Worker busy during flush tick");
+      if (workerBusy.current && flushCount % 4 === 0) {
+        // eslint-disable-next-line no-console
+        console.warn("⚠️ Worker busy during buffered flush");
+      }
     }, FLUSH_MS);
 
     return () => {
       clearInterval(interval);
+      // eslint-disable-next-line no-console
       console.log("🔴 Buffered mode stopped");
     };
   }, [settings.buffer]);
 
-  // ===========================================================
-  // ⚡ INSTANT MODE (per-event processing)
-  // ===========================================================
+  // =========================
+  // Instant mode (per-event)
+  // =========================
   useEffect(() => {
     if (settings.buffer) return;
+    // eslint-disable-next-line no-console
     console.log("⚡ Instant mode active");
+    activeComputeSource.current = offloadWork.current ? "worker" : "main";
 
     const onMsg = (e: MessageEvent<HospitalEvent>) => {
       const msg = e.data;
       if (!isNonCriticalEvent(msg)) return;
 
       const now = Date.now();
-      const patientId = msg.patientId ?? "Unknown";
-      const value = msg.value;
+      const pid = msg.patientId ?? "Unknown";
+      const val = msg.value;
 
-      const newMetric: PatientMetrics = {
+      const metric: PatientMetrics = {
         count: 1,
-        average: value,
-        min: value,
-        max: value,
+        average: val,
+        min: val,
+        max: val,
         lastProcessedTimestamp: now,
       };
 
-      if (!historyRef.current[patientId]) historyRef.current[patientId] = [];
-      const arr = historyRef.current[patientId];
-      arr.push(newMetric);
-      if (arr.length > 20) arr.shift();
+      (historyRef.current[pid] ||= []).push(metric);
+      if (historyRef.current[pid].length > 20) historyRef.current[pid].shift();
 
-      const patientArrays = Object.values(historyRef.current) as PatientMetrics[][];
-      const perPatientAverages = patientArrays.map((a) =>
-        a.length > 0 ? a[a.length - 1].average : 0
-      );
-      const perPatientStdDevs = patientArrays.map((a) =>
-        a.length > 1 ? stddev(a.map((x) => x.average)) : 0
-      );
-      const totalCount = patientArrays.reduce(
-        (sum, a) => (a.length > 0 ? sum + a[a.length - 1].count : sum),
-        0
-      );
+      // Build population from latest per-patient
+      const arrays = Object.values(historyRef.current) as PatientMetrics[][];
+      const perAvg = arrays.map((a) => (a.length ? a[a.length - 1].average : 0));
+      const perStd = arrays.map((a) => (a.length > 1 ? stddev(a.map((x) => x.average)) : 0));
+      const totalCount = arrays.reduce((sum, a) => (a.length ? sum + a[a.length - 1].count : sum), 0);
 
-      const rollingAvg = mean(perPatientAverages);
-      const rollingStdDev = mean(perPatientStdDevs);
+      const rollingAvg = mean(perAvg);
+      const rollingStdDev = mean(perStd);
       const deviation = Math.abs(rollingAvg - BASELINE);
-      const volComponent = rollingStdDev / 20;
-      const devComponent = deviation / 50;
-      const rawScore = (volComponent + devComponent) / 2;
-      const anomalyScore = Number(clamp01(rawScore).toFixed(3));
+      const anomalyScore = Number(clamp01((rollingStdDev / 20 + deviation / 50) / 2).toFixed(3));
       const sampleBoost = Math.min(1, totalCount / 40);
-      const conf =
-        clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost);
-      const confidence = Number(conf.toFixed(3));
+      const confidence = Number((clamp01(1 / (1 + rollingStdDev / 15)) * (0.6 + 0.4 * sampleBoost)).toFixed(3));
 
       const populationPoint: PopulationPoint = {
         windowEnd: now,
@@ -378,38 +372,25 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
         anomalyScore,
         confidence,
       };
-
-      if (populationPoint.windowEnd <= lastWindowTimestampRef.current)
-        populationPoint.windowEnd = lastWindowTimestampRef.current + 1;
-      lastWindowTimestampRef.current = populationPoint.windowEnd;
+      normalizeWindowEnd(populationPoint);
 
       if (!offloadWork.current) {
-        populationHistoryRef.current.push(populationPoint);
-        while (
-          populationHistoryRef.current.length > 0 &&
-          (now - populationHistoryRef.current[0].windowEnd > WINDOW_MS ||
-            populationHistoryRef.current.length > MAX_POINTS)
-        )
-          populationHistoryRef.current.shift();
-
-        setPopulationHistory([...populationHistoryRef.current]);
-        setPopulationAverages(populationPoint);
-        setComputedByPatient({ ...computedByPatient, [patientId]: newMetric });
+        // MAIN timeline
+        activeComputeSource.current = "main";
+        commitPopulationPoint(populationPoint);
+        setComputedByPatient(buildLatestFromHistory());
 
         if (useHeavyComputation.current) {
           const stopAt = performance.now() + 2000;
           while (performance.now() < stopAt) {}
         }
       } else {
-        const id = Date.now();
-        const payload = {
-          latest: { ...computedByPatient, [patientId]: newMetric },
-          populationPoint,
-        };
+        // WORKER timeline
+        activeComputeSource.current = "worker";
         const batch = {
           type: "process",
-          id,
-          payload,
+          id: Date.now(),
+          payload: { latest: buildLatestFromHistory(), populationPoint },
           useHeavyComputation: useHeavyComputation.current,
         };
         if (queueRef.current.length >= MAX_QUEUE) queueRef.current.shift();
@@ -421,37 +402,39 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
     worker.addEventListener("message", onMsg);
     return () => {
       worker.removeEventListener("message", onMsg);
+      // eslint-disable-next-line no-console
       console.log("⚪ Instant mode stopped");
     };
   }, [settings.buffer]);
 
-  // ===========================================================
-  // 🖼️ UI RENDER
-  // ===========================================================
+  // -------- UI --------
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 relative">
       {settings.profileMode && (
-        <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
-          Renders: {renderCount.current}
-        </span>
+        <div className="absolute top-2 right-2 bg-blue-500/10 text-[10px] text-blue-400 px-2 py-1 rounded-md space-y-0.5">
+          <div>Renders: {renderCount.current}</div>
+          <div>Offload: {offloadWork.current ? "Worker" : "Main"}</div>
+          <div>Buffer: {settings.buffer ? "On" : "Off"}</div>
+          <div>Owner: {activeComputeSource.current}</div>
+          <div>Busy: {workerBusy.current ? "Yes" : "No"}</div>
+          <div>Queue: {queueRef.current.length}</div>
+        </div>
       )}
 
+      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
           <Layers size={20} />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-white">
-            Non-Critical Vitals
-          </h2>
+          <h2 className="text-lg font-semibold text-white">Non-Critical Vitals</h2>
           <p className="text-xs text-zinc-500">
-            {settings.buffer
-              ? "Buffered updates every 500 ms"
-              : "Instant per-event processing"}
+            {settings.buffer ? "Buffered updates every 500 ms" : "Instant per-event processing"}
           </p>
         </div>
       </div>
 
+      {/* Summary */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2 text-sm text-zinc-400">
           <TrendingUp size={16} />
@@ -475,10 +458,12 @@ export function NonCriticalMetrics2({ worker }: { worker: Worker }) {
         )}
       </div>
 
+      {/* Chart */}
       <div className="h-48 bg-zinc-950/30 rounded-lg border border-zinc-800/50 p-2 mb-6">
         <LiveTrendChart simulate={false} externalData={populationHistory} className="h-full" />
       </div>
 
+      {/* Footer */}
       <div className="flex justify-between items-center pt-3 mt-4 border-t border-zinc-800/50">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <Cpu size={12} />
