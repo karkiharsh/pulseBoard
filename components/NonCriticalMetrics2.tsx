@@ -199,9 +199,9 @@ setPopulationHistory([...populationHistoryRef.current]);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 relative">
-      <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
+    {settings.profileMode &&  (<span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
         Renders: {renderCount.current}
-      </span>
+      </span>)}
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">

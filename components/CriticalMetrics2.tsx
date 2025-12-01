@@ -2,10 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Activity } from "lucide-react";
 import type { CriticalEvent, HospitalEvent } from "../types";
+import { useDashboard } from "@/context/DashboardContext";
 
 export function CriticalMetrics2({ worker }: { worker: Worker }) {
   const [data, setData] = useState<CriticalEvent | null>(null);
   const renderCount = useRef(0);
+  const {settings} = useDashboard(); 
   renderCount.current++;
 
   useEffect(() => {
@@ -21,9 +23,9 @@ export function CriticalMetrics2({ worker }: { worker: Worker }) {
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 relative overflow-hidden">
-      <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
+      {settings.profileMode && (<span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
         Renders: {renderCount.current}
-      </span>
+      </span>)}
 
       <div className="flex items-center gap-3 mb-4">
         <div className="p-2 bg-red-500/10 rounded-lg text-red-500 animate-pulse">

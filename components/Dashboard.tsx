@@ -41,9 +41,9 @@ export const Dashboard: React.FC = () => {
       
       {/* Profile Render Counter */}
      
-        <span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
+       {settings.profileMode && (<span className="absolute top-2 right-2 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 rounded">
           Renders: {renderCount.current}
-        </span>
+        </span>)}
       
 
       <div className="max-w-6xl mx-auto space-y-8">
