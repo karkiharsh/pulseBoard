@@ -28,6 +28,7 @@ export interface AppSettings {
   buffer: boolean; // Disables buffering (simulates lag)
   OffloadToWorker: boolean; // Runs mock parsing computation on main thread
   profileMode: boolean; // Enables visual render logging
+  useHeavyComputation: boolean; // Simulates heavy computation load
 }
 // types.ts
 export interface BaseEvent {

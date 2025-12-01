@@ -1,6 +1,6 @@
 import React from "react";
 import { AppSettings } from "../types";
-import { Settings, ZapOff, Activity, Monitor } from "lucide-react";
+import { Settings, ZapOff, Activity, Monitor, FlameIcon } from "lucide-react";
 import { clsx } from "clsx";
 
 interface ControlsProps {
@@ -97,6 +97,15 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
         />
         <p className="text-[10px] text-zinc-500 px-1">
           Shows render counts on components to visualize optimization.
+        </p>
+        <ToggleBtn
+          active={settings.profileMode}
+          onClick={() => onToggle("profileMode")}
+          label="Add Heavy Computation"
+          icon={FlameIcon}
+        />
+        <p className="text-[10px] text-zinc-500 px-1">
+          Simulates hevay blocking data processing.
         </p>
       </div>
     </div>

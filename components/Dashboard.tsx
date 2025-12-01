@@ -16,6 +16,7 @@ export const Dashboard: React.FC = () => {
     buffer: true,
     OffloadToWorker: true,
     profileMode: false,
+    useHeavyComputation:false
   });
 
   const { data: systemInfo, isLoading } = useQuery({
