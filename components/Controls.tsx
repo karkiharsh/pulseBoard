@@ -99,8 +99,8 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
           Shows render counts on components to visualize optimization.
         </p>
         <ToggleBtn
-          active={settings.profileMode}
-          onClick={() => onToggle("profileMode")}
+          active={settings.useHeavyComputation}
+          onClick={() => onToggle("useHeavyComputation")}
           label="Add Heavy Computation"
           icon={FlameIcon}
         />
