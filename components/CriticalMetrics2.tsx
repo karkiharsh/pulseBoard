@@ -19,7 +19,7 @@ export function CriticalMetrics2({ worker }: { worker: Worker }) {
     return () => worker.removeEventListener("message", onMsg);
   }, [worker]);
 
-  console.log("🔥 CriticalMetrics render", renderCount.current, data?.label);
+  // console.log("🔥 CriticalMetrics render", renderCount.current, data?.label);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 relative overflow-hidden">
