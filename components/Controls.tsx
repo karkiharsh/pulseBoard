@@ -72,7 +72,7 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
         <ToggleBtn
           active={settings.buffer}
           onClick={() => onToggle("buffer")}
-          label="Slow Mode (No Buffer)"
+          label="Buffer Non-Critical Events"
           icon={ZapOff}
         />
         <p className="text-[10px] text-zinc-500 px-1 mb-1">
