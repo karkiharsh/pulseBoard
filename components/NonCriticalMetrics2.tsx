@@ -174,7 +174,7 @@ useEffect(() => {
 
     // 🧱 Heavy computation block
     if (!settings.OffloadToWorker) {
-      const stopAt = performance.now() + 5000;
+      const stopAt = performance.now() + 2000;
       let f = 0;
       let b = 0n;
       while (performance.now() < stopAt) {
