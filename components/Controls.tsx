@@ -2,7 +2,8 @@ import React from "react";
 import { AppSettings } from "../types";
 import { Settings, ZapOff, Activity, Monitor, FlameIcon } from "lucide-react";
 import { clsx } from "clsx";
-
+import { useState } from "react";
+import { InfoOverlay } from "./InfoOverlay";
 interface ControlsProps {
   settings: AppSettings;
   onToggle: (key: keyof AppSettings) => void;
@@ -56,6 +57,7 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
       </div>
     </button>
   );
+const [showInfo, setShowInfo] = useState(false);
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -66,9 +68,17 @@ export const Controls: React.FC<ControlsProps> = ({ settings, onToggle }) => {
         <h2 className="text-base font-semibold text-white">
           Simulation Controls
         </h2>
+        <button
+  onClick={() => setShowInfo(!showInfo)}
+  className="px-3 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-sm text-zinc-300 hover:bg-zinc-800"
+>
+  About This Demo
+</button>
       </div>
 
       <div className="space-y-3">
+        {showInfo && <InfoOverlay onClose={() => setShowInfo(false)} />}
+
         <ToggleBtn
           active={settings.buffer}
           onClick={() => onToggle("buffer")}
