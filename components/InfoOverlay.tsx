@@ -1,11 +1,11 @@
-// InfoOverlay.tsx
+// components/InfoOverlay.tsx
 import React from "react";
 import { X } from "lucide-react";
 
-export function InfoOverlay({ onClose }: { onClose: () => void }) {
+export const InfoOverlay = ({ onClose }: { onClose: () => void }) => {
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-xl w-full relative shadow-lg">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 px-4">
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-lg w-full relative shadow-xl text-zinc-300">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 text-zinc-500 hover:text-zinc-300"
@@ -13,47 +13,30 @@ export function InfoOverlay({ onClose }: { onClose: () => void }) {
           <X size={18} />
         </button>
 
-        <h2 className="text-xl font-semibold text-white mb-4">About PulseBoard</h2>
-        <p className="text-sm text-zinc-400 mb-4">
-          PulseBoard is a simulation of a high-performance React dashboard.
-          It demonstrates techniques for handling high-frequency WebSocket data
-          without freezing the UI, using buffered rendering and Web Workers.
+        <h2 className="text-xl font-semibold text-white mb-4">
+          About This Demo
+        </h2>
+
+        <p className="text-sm leading-relaxed text-zinc-400 mb-4">
+          <strong>PulseBoard</strong> simulates a hospital dashboard receiving
+          high-frequency data streams through WebSockets. It demonstrates how to:
         </p>
 
-        <h3 className="text-md text-white mt-4 mb-2">🧩 Simulation Toggles</h3>
-        <ul className="text-sm text-zinc-400 space-y-2 list-disc list-inside">
-          <li>
-            <strong>Buffer Non-Critical Events:</strong> Enables batching to
-            reduce re-renders for high-frequency, low-priority updates.
-          </li>
-          <li>
-            <strong>Offload to Web Worker:</strong> Moves heavy computation
-            off the main thread to prevent UI freezes.
-          </li>
-          <li>
-            <strong>Profile Mode:</strong> Displays live render counts on
-            components to visualize optimization effects.
-          </li>
-          <li>
-            <strong>Add Heavy Computation:</strong> Simulates blocking CPU
-            operations to show how performance can degrade.
-          </li>
+        <ul className="list-disc list-inside text-sm text-zinc-400 space-y-1 mb-4">
+          <li>Isolate critical and non-critical render paths in React.</li>
+          <li>Prevent UI freezes with buffering and batching.</li>
+          <li>Offload heavy computation to Web Workers.</li>
+          <li>Visualize render frequency and CPU impact in real-time.</li>
         </ul>
 
-        <h3 className="text-md text-white mt-4 mb-2">🎯 Try This</h3>
-        <p className="text-sm text-zinc-400">
-          Disable buffering and Web Workers, then toggle heavy computation to
-          observe how React rendering performance is affected. Then re-enable
-          them to see how optimization stabilizes the dashboard.
-        </p>
-
-        <h3 className="text-md text-white mt-4 mb-2">💡 Learning Outcome</h3>
-        <p className="text-sm text-zinc-400">
-          Understand how to isolate rendering ownership, use buffering for
-          non-critical updates, and offload high-frequency processing to web workers for
-          maintain smooth UI in real-time systems.
+        <p className="text-sm text-zinc-400 border-t border-zinc-800 pt-3 mt-4">
+          💡 Want to explore interactively?
+          <br />
+          Click the <span className="font-semibold text-indigo-400">ℹ️</span>{" "}
+          icon beside each control to see what happens when it’s toggled —
+          including short visual demos and expected outcomes.
         </p>
       </div>
     </div>
   );
-}
+};
